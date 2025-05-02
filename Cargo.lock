@@ -5975,7 +5975,6 @@ dependencies = [
  "deno_kv",
  "deno_napi",
  "deno_net",
- "deno_node",
  "deno_permissions",
  "deno_process",
  "deno_resolver",
