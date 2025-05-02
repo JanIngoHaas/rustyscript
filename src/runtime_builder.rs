@@ -184,15 +184,6 @@ impl RuntimeBuilder {
         self
     }
 
-    /// Set the options for the node extension
-    #[cfg(feature = "node_experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "node_experimental")))]
-    #[must_use]
-    pub fn with_node_resolver(mut self, resolver: std::sync::Arc<crate::RustyResolver>) -> Self {
-        self.0.extension_options.node_resolver = resolver;
-        self
-    }
-
     //
     // Web options
     //

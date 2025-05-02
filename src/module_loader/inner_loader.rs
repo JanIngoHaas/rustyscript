@@ -22,17 +22,6 @@ use std::{
     path::Path,
 };
 
-#[cfg(feature = "node_experimental")]
-use crate::ext::node::resolvers::{RustyNpmPackageFolderResolver, RustyResolver};
-#[cfg(feature = "node_experimental")]
-use crate::ext::node::NodeCodeTranslator;
-#[cfg(feature = "node_experimental")]
-use deno_node::NodeResolver;
-#[cfg(feature = "node_experimental")]
-use node_resolver::InNpmPackageChecker;
-#[cfg(feature = "node_experimental")]
-use node_resolver::{NodeResolutionKind, ResolutionMode};
-
 use super::ImportProvider;
 
 /// Stores the source code and source ma#![allow(deprecated)]p for loaded modules
@@ -52,10 +41,6 @@ pub struct LoaderOptions {
     /// Used for error message generation
     pub source_map_cache: SourceMapCache,
 
-    /// A resolver for node modules
-    #[cfg(feature = "node_experimental")]
-    pub node_resolver: Arc<RustyResolver>,
-
     /// An optional import provider to manage module resolution
     pub import_provider: Option<Box<dyn ImportProvider>>,
 
@@ -64,31 +49,6 @@ pub struct LoaderOptions {
 
     /// The current working directory for the loader
     pub cwd: PathBuf,
-}
-
-#[cfg(feature = "node_experimental")]
-struct NodeProvider {
-    rusty_resolver: Arc<RustyResolver>,
-    node_resolver: Arc<
-        NodeResolver<
-            deno_resolver::npm::DenoInNpmPackageChecker,
-            RustyNpmPackageFolderResolver,
-            sys_traits::impls::RealSys,
-        >,
-    >,
-    code_translator: Rc<NodeCodeTranslator>,
-}
-#[cfg(feature = "node_experimental")]
-impl NodeProvider {
-    pub fn new(resolver: Arc<RustyResolver>) -> Self {
-        let node_resolver = resolver.node_resolver();
-        let code_translator = Rc::new(resolver.code_translator(node_resolver.clone()));
-        Self {
-            rusty_resolver: resolver,
-            node_resolver,
-            code_translator,
-        }
-    }
 }
 
 /// Internal implementation of the module loader
@@ -103,9 +63,6 @@ pub struct InnerRustyLoader {
     import_provider: Option<Box<dyn ImportProvider>>,
     schema_whlist: HashSet<String>,
     cwd: PathBuf,
-
-    #[cfg(feature = "node_experimental")]
-    node: NodeProvider,
 }
 
 impl InnerRustyLoader {
@@ -119,9 +76,6 @@ impl InnerRustyLoader {
             import_provider: options.import_provider,
             schema_whlist: options.schema_whlist,
             cwd: options.cwd,
-
-            #[cfg(feature = "node_experimental")]
-            node: NodeProvider::new(options.node_resolver),
         }
     }
 
@@ -164,34 +118,6 @@ impl InnerRustyLoader {
         referrer: &str,
         kind: deno_core::ResolutionKind,
     ) -> Result<ModuleSpecifier, ModuleLoaderError> {
-        #[cfg(feature = "node_experimental")]
-        let referrer_specifier = referrer
-            .to_module_specifier(&self.cwd)
-            .map_err(|e| JsErrorBox::from_err(to_io_err(e)))?;
-
-        //
-        // Handle import aliasing for node imports
-        #[cfg(feature = "node_experimental")]
-        if let Some(alias) = self.handle_alias(specifier, referrer)? {
-            return Ok(alias);
-        }
-
-        //
-        // Handle built-in node modules
-        #[cfg(feature = "node_experimental")]
-        if is_builtin_node_module(specifier) {
-            return self.load_npm(specifier, referrer);
-        }
-
-        //
-        // Use node resolution if we're in an npm package
-        #[cfg(feature = "node_experimental")]
-        if referrer_specifier.scheme() == "file"
-            && self.node.rusty_resolver.in_npm_package(&referrer_specifier)
-        {
-            return self.load_npm(specifier, referrer);
-        }
-
         // Resolve the module specifier to an absolute URL
         let url = deno_core::resolve_import(specifier, referrer)?;
 
@@ -245,11 +171,6 @@ impl InnerRustyLoader {
                 // Extension import - allow
             }
 
-            #[cfg(feature = "node_experimental")]
-            _ if specifier.starts_with("npm:") || specifier.starts_with("node:") => {
-                return self.load_npm(specifier, referrer);
-            }
-
             _ if self.schema_whlist.iter().any(|s| specifier.starts_with(s)) => {
                 // Custom schema whitelist import - allow
             }
@@ -300,13 +221,6 @@ impl InnerRustyLoader {
 
         // We check permissions next
         match module_specifier.scheme() {
-            // Remote fetch imports
-            #[cfg(feature = "url_import")]
-            "https" | "http" => ModuleLoadResponse::Async(
-                async move { Self::handle_load(inner, module_specifier, Self::load_remote).await }
-                    .boxed_local(),
-            ),
-
             // FS imports
             "file" => ModuleLoadResponse::Async(
                 async move { Self::handle_load(inner, module_specifier, Self::load_file).await }
@@ -329,119 +243,7 @@ impl InnerRustyLoader {
         module_specifier: ModuleSpecifier,
         content: String,
     ) -> Result<String, Error> {
-        #[cfg(not(feature = "node_experimental"))]
-        {
-            Ok(content)
-        }
-
-        #[cfg(feature = "node_experimental")]
-        {
-            let is_npm = inner
-                .borrow()
-                .node
-                .rusty_resolver
-                .in_npm_package(&module_specifier);
-            if is_npm {
-                let translator = inner.borrow().node.code_translator.clone();
-
-                let source = translator
-                    .translate_cjs_to_esm(
-                        &module_specifier,
-                        Some(std::borrow::Cow::Borrowed(&content)),
-                    )
-                    .await?
-                    .into_owned();
-                Ok(source)
-            } else {
-                Ok(content)
-            }
-        }
-    }
-
-    #[cfg(feature = "node_experimental")]
-    fn handle_alias(
-        &self,
-        specifier: &str,
-        referrer: &str,
-    ) -> Result<Option<ModuleSpecifier>, ModuleLoaderError> {
-        if specifier.starts_with('#') {
-            let referrer = if deno_core::specifier_has_uri_scheme(referrer) {
-                deno_core::resolve_url(referrer)?
-            } else {
-                referrer
-                    .to_module_specifier(&self.cwd)
-                    .map_err(JsErrorBox::from_err)?
-            };
-
-            let Ok(referrer_path) = referrer.to_file_path() else {
-                return Ok(None);
-            };
-
-            let package = self
-                .node
-                .rusty_resolver
-                .package_json_resolver()
-                .get_closest_package_json(&referrer_path)
-                .map_err(JsErrorBox::from_err)?;
-            if let Some(package) = package {
-                let url = self
-                    .node
-                    .node_resolver
-                    .package_imports_resolve(
-                        specifier,
-                        Some(&node_resolver::UrlOrPathRef::from_url(&referrer)),
-                        ResolutionMode::Import,
-                        Some(&package),
-                        node_resolver::REQUIRE_CONDITIONS,
-                        NodeResolutionKind::Execution,
-                    )
-                    .map_err(JsErrorBox::from_err)?;
-
-                let url = match url {
-                    node_resolver::UrlOrPath::Url(url) => url,
-                    node_resolver::UrlOrPath::Path(path) => {
-                        let url = format!("file://{}", path.to_string_lossy());
-                        deno_core::resolve_url(&url)?
-                    }
-                };
-
-                return Ok(Some(url));
-            }
-        }
-
-        Ok(None)
-    }
-
-    #[cfg(feature = "node_experimental")]
-    fn load_npm(
-        &self,
-        specifier: &str,
-        referrer: &str,
-    ) -> Result<ModuleSpecifier, ModuleLoaderError> {
-        let referrer = if deno_core::specifier_has_uri_scheme(referrer) {
-            deno_core::resolve_url(referrer)?
-        } else {
-            referrer
-                .to_module_specifier(&self.cwd)
-                .map_err(JsErrorBox::from_err)?
-        };
-
-        // Strip the scheme from the specifier
-        let (_, specifier) = specifier.split_once(':').unwrap_or(("", specifier));
-
-        let resolution = self
-            .node
-            .node_resolver
-            .resolve(
-                specifier,
-                &referrer,
-                ResolutionMode::Import,
-                NodeResolutionKind::Execution,
-            )
-            .map_err(JsErrorBox::from_err)?;
-        let url = resolution.into_url().map_err(JsErrorBox::from_err)?;
-
-        Ok(url)
+        Ok(content)
     }
 
     #[allow(unused_variables)]
@@ -550,10 +352,4 @@ impl InnerRustyLoader {
         self.source_map_cache
             .insert(filename.to_string(), (source, source_map));
     }
-}
-
-#[cfg(feature = "node_experimental")]
-fn is_builtin_node_module(specifier: &str) -> bool {
-    use node_resolver::IsBuiltInNodeModuleChecker;
-    node_resolver::DenoIsBuiltInNodeModuleChecker.is_builtin_node_module(specifier)
 }

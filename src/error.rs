@@ -222,11 +222,6 @@ mod error_macro {
     }
 }
 
-#[cfg(feature = "node_experimental")]
-map_error!(node_resolver::analyze::TranslateCjsToEsmError, |e| {
-    Error::Runtime(e.to_string())
-});
-
 map_error!(deno_ast::TranspileError, |e| Error::Runtime(e.to_string()));
 map_error!(deno_core::error::CoreError, |e| match e {
     CoreError::Js(js_error) => Error::JsError(js_error),

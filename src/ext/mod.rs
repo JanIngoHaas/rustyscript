@@ -78,13 +78,6 @@ pub mod kv;
 #[cfg(feature = "cron")]
 pub mod cron;
 
-#[cfg(feature = "node_experimental")]
-pub mod napi;
-#[cfg(feature = "node_experimental")]
-pub mod node;
-#[cfg(feature = "node_experimental")]
-pub mod runtime;
-
 /// Options for configuring extensions
 pub struct ExtensionOptions {
     /// Options specific to the `deno_web`, `deno_fetch` and `deno_net` extensions
@@ -143,15 +136,6 @@ pub struct ExtensionOptions {
     #[cfg(feature = "kv")]
     #[cfg_attr(docsrs, doc(cfg(feature = "kv")))]
     pub kv_store: kv::KvStore,
-
-    /// Package resolver for the `deno_node` extension
-    /// `RustyResolver` allows you to select the base dir for modules
-    /// as well as the filesystem implementation to use
-    ///
-    /// Requires the `node_experimental` feature to be enabled
-    #[cfg(feature = "node_experimental")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "node_experimental")))]
-    pub node_resolver: std::sync::Arc<node::resolvers::RustyResolver>,
 }
 
 impl Default for ExtensionOptions {
@@ -180,9 +164,6 @@ impl Default for ExtensionOptions {
 
             #[cfg(feature = "kv")]
             kv_store: kv::KvStore::default(),
-
-            #[cfg(feature = "node_experimental")]
-            node_resolver: std::sync::Arc::new(node::resolvers::RustyResolver::default()),
         }
     }
 }
@@ -251,18 +232,6 @@ pub(crate) fn all_extensions(
 
     #[cfg(feature = "cron")]
     extensions.extend(cron::extensions(is_snapshot));
-
-    #[cfg(feature = "node_experimental")]
-    {
-        extensions.extend(napi::extensions(is_snapshot));
-        extensions.extend(node::extensions(options.node_resolver.clone(), is_snapshot));
-
-        extensions.extend(runtime::extensions(
-            &options,
-            shared_array_buffer_store,
-            is_snapshot,
-        ));
-    }
 
     extensions.extend(user_extensions);
     extensions

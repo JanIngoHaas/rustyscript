@@ -209,7 +209,7 @@ async-trait = "0.1.87"
 # Used to generate identifiers for callbacks
 paste = "1.0.15"
 
-deno_core = "0.345.0"
+deno_core = "0.344.0"
 deno_error = "0.5.5"
 
 # For transpiling typescript
@@ -288,7 +288,6 @@ once_cell = { version = "1.20.2", optional = true }
 base64-simd = { version = "0.8.0", optional = true }
 
 # Dependencies for the node feature
-deno_resolver = { version = "0.35.0", optional = true }
 deno_runtime = { version = "0.212.0", optional = true, features = [
     "exclude_runtime_main_js",
 ] }

@@ -210,9 +210,6 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
             schema_whlist: options.schema_whlist,
             cwd: cwd.clone(),
 
-            #[cfg(feature = "node_experimental")]
-            node_resolver: options.extension_options.node_resolver.clone(),
-
             ..Default::default()
         }));
 
@@ -736,13 +733,6 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
             let module_specifier = side_module.filename().to_module_specifier(&self.cwd)?;
             let (code, sourcemap) = transpile(&module_specifier, side_module.contents())?;
 
-            // Now CJS translation, for node
-            #[cfg(feature = "node_experimental")]
-            let code = self
-                .module_loader
-                .translate_cjs(&module_specifier, &code)
-                .await?;
-
             let fast_code = deno_core::FastString::from(code.clone());
 
             let s_modid = self
@@ -767,13 +757,6 @@ impl<RT: RuntimeTrait> InnerRuntime<RT> {
         if let Some(module) = main_module {
             let module_specifier = module.filename().to_module_specifier(&self.cwd)?;
             let (code, sourcemap) = transpile(&module_specifier, module.contents())?;
-
-            // Now CJS translation, for node
-            #[cfg(feature = "node_experimental")]
-            let code = self
-                .module_loader
-                .translate_cjs(&module_specifier, &code)
-                .await?;
 
             let fast_code = deno_core::FastString::from(code.clone());
 

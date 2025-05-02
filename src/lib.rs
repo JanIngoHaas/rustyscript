@@ -396,10 +396,6 @@ pub use ext::kv::{KvConfig, KvStore};
 //#[cfg_attr(docsrs, doc(cfg(feature = "cache")))]
 //pub use ext::cache::CacheBackend;
 
-#[cfg(feature = "node_experimental")]
-#[cfg_attr(docsrs, doc(cfg(feature = "node_experimental")))]
-pub use ext::node::resolvers::RustyResolver;
-
 #[cfg(feature = "web")]
 #[cfg_attr(docsrs, doc(cfg(feature = "web")))]
 pub use ext::web::{
