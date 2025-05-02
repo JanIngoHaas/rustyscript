@@ -340,10 +340,6 @@ name = "websocket"
 required-features = ["websocket", "web"]
 
 [[example]]
-name = "node_import"
-required-features = ["node_experimental"]
-
-[[example]]
 name = "background_tasks"
 required-features = ["web"]
 
