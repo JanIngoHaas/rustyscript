@@ -375,6 +375,11 @@ impl InnerWorker for DefaultWorker {
             timeout: options.timeout,
             shared_array_buffer_store: options.shared_array_buffer_store,
             startup_snapshot: options.startup_snapshot,
+            extensions: options
+                .extensions_generator
+                .as_ref()
+                .map(|g| g.generate_extensions())
+                .unwrap_or_default(),
             ..Default::default()
         })?;
         let modules = std::collections::HashMap::new();
@@ -620,6 +625,22 @@ impl AsRef<Worker<DefaultWorker>> for DefaultWorker {
     }
 }
 
+/// A trait for generating extensions to be used by the runtime
+/// All functions of type `Fn() -> Vec<deno_core::Extension>` implement this trait
+pub trait ExtensionsGenerator: Send + Sync + 'static {
+    /// Generate a vector of extensions to be used by the runtime
+    fn generate_extensions(&self) -> Vec<deno_core::Extension>;
+}
+
+impl<F> ExtensionsGenerator for F
+where
+    F: Fn() -> Vec<deno_core::Extension> + Send + Sync + 'static,
+{
+    fn generate_extensions(&self) -> Vec<deno_core::Extension> {
+        self()
+    }
+}
+
 /// Options for the default worker
 #[derive(Default, Clone)]
 pub struct DefaultWorkerOptions {
@@ -638,6 +659,13 @@ pub struct DefaultWorkerOptions {
     /// Optional shared array buffer store to use for the runtime
     /// Allows data-sharing between runtimes across threads
     pub shared_array_buffer_store: Option<deno_core::SharedArrayBufferStore>,
+
+    /// Optional generator for creating extensions within the worker thread.
+    /// Since `deno_core::Extension` is not `Send`, extensions cannot be passed
+    /// directly when creating the worker. Instead, provide an object implementing
+    /// the `ExtensionsGenerator` trait (like a closure `Fn() -> Vec<Extension>`)
+    /// which will be called inside the worker thread to instantiate the extensions.
+    pub extensions_generator: Option<std::sync::Arc<dyn ExtensionsGenerator>>,
 }
 
 /// Query types for the default worker
