@@ -17,6 +17,7 @@
 //! }
 
 use crate::{Error, RuntimeOptions};
+use std::sync::atomic::{AtomicUsize, Ordering}; // Import Ordering
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
@@ -29,7 +30,7 @@ where
     W: InnerWorker,
 {
     workers: Vec<Arc<Mutex<Worker<W>>>>,
-    next_worker: usize,
+    next_worker: AtomicUsize,
     options: W::RuntimeOptions,
 }
 
@@ -50,7 +51,7 @@ where
 
         Ok(Self {
             workers,
-            next_worker: 0,
+            next_worker: AtomicUsize::new(0),
             options,
         })
     }
@@ -89,11 +90,16 @@ where
         Some(Arc::clone(self.workers.get(id)?))
     }
 
-    /// Get the next worker in the pool
-    pub fn next_worker(&mut self) -> Arc<Mutex<Worker<W>>> {
-        let worker = &self.workers[self.next_worker];
-        self.next_worker = (self.next_worker + 1) % self.workers.len();
-        Arc::clone(worker)
+    /// Get the next worker in the pool using atomic operations for round-robin.
+    pub fn next_worker(&self) -> Arc<Mutex<Worker<W>>> {
+        // Atomically increment the counter and get the previous value.
+        // Relaxed ordering is fine because order doesn't matter here.
+        let current_index = self.next_worker.fetch_add(1, Ordering::Relaxed);
+        // Calculate the index within the bounds of the workers vector.
+        // This ensures that even if the counter wraps around, the index remains valid.
+        let index = current_index % self.workers.len();
+        // Clone the Arc for the worker at the calculated index.
+        Arc::clone(&self.workers[index])
     }
 
     /// Send a request to the next worker in the pool
@@ -101,7 +107,7 @@ where
     ///
     /// # Errors
     /// Will return an error if the worker has already been stopped, or if the worker thread panicked
-    pub fn send_and_await(&mut self, query: W::Query) -> Result<W::Response, Error> {
+    pub fn send_and_await(&self, query: W::Query) -> Result<W::Response, Error> {
         self.next_worker().lock().unwrap().send_and_await(query)
     }
 
