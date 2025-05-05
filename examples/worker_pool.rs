@@ -27,21 +27,21 @@ fn main() -> Result<(), Error> {
     println!("Start load on A...");
     let worker_a = pool.next_worker();
     let query = DefaultWorkerQuery::LoadModule(module.clone());
-    worker_a.borrow().send(query)?; // We don't need to wait for the response right away!
+    worker_a.lock().unwrap().send(query)?; // We don't need to wait for the response right away!
 
     //
     // Start the operation on the second worker
     println!("Start load on B...");
     let worker_b = pool.next_worker();
     let query = DefaultWorkerQuery::LoadModule(module.clone());
-    worker_b.borrow().send(query)?; // We don't need to wait for the response here either
+    worker_b.lock().unwrap().send(query)?; // We don't need to wait for the response here either
 
     //
     // We can now wait for the responses
     print!("Waiting for the workers to finish... ");
-    worker_a.borrow().receive()?;
+    worker_a.lock().unwrap().receive()?;
     print!("Done A... ");
-    worker_b.borrow().receive()?;
+    worker_b.lock().unwrap().receive()?;
     println!("Done B!");
 
     Ok(())

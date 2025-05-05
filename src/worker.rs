@@ -20,6 +20,7 @@ use crate::{Error, RuntimeOptions};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
 
 /// A pool of worker threads that can be used to run javascript code in parallel
@@ -29,7 +30,7 @@ pub struct WorkerPool<W>
 where
     W: InnerWorker,
 {
-    workers: Vec<Rc<RefCell<Worker<W>>>>,
+    workers: Vec<Arc<Mutex<Worker<W>>>>,
     next_worker: usize,
     options: W::RuntimeOptions,
 }
@@ -46,7 +47,7 @@ where
         crate::init_platform(n_workers, true);
         let mut workers = Vec::with_capacity(n_workers as usize + 1);
         for _ in 0..n_workers {
-            workers.push(Rc::new(RefCell::new(Worker::new(options.clone())?)));
+            workers.push(Arc::new(Mutex::new(Worker::new(options.clone())?)));
         }
 
         Ok(Self {
@@ -65,7 +66,7 @@ where
     /// Stop all workers in the pool and wait for them to finish
     pub fn shutdown(self) {
         for worker in self.workers {
-            worker.borrow_mut().shutdown();
+            worker.lock().unwrap().shutdown();
         }
     }
 
@@ -86,15 +87,15 @@ where
 
     /// Get a worker by its index in the pool
     #[must_use]
-    pub fn worker_by_id(&self, id: usize) -> Option<Rc<RefCell<Worker<W>>>> {
-        Some(Rc::clone(self.workers.get(id)?))
+    pub fn worker_by_id(&self, id: usize) -> Option<Arc<Mutex<Worker<W>>>> {
+        Some(Arc::clone(self.workers.get(id)?))
     }
 
     /// Get the next worker in the pool
-    pub fn next_worker(&mut self) -> Rc<RefCell<Worker<W>>> {
+    pub fn next_worker(&mut self) -> Arc<Mutex<Worker<W>>> {
         let worker = &self.workers[self.next_worker];
         self.next_worker = (self.next_worker + 1) % self.workers.len();
-        Rc::clone(worker)
+        Arc::clone(worker)
     }
 
     /// Send a request to the next worker in the pool
@@ -103,7 +104,7 @@ where
     /// # Errors
     /// Will return an error if the worker has already been stopped, or if the worker thread panicked
     pub fn send_and_await(&mut self, query: W::Query) -> Result<W::Response, Error> {
-        self.next_worker().borrow().send_and_await(query)
+        self.next_worker().lock().unwrap().send_and_await(query)
     }
 
     /// Evaluate a string of non-ecma javascript code in a separate thread
