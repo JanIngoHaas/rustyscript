@@ -17,8 +17,6 @@
 //! }
 
 use crate::{Error, RuntimeOptions};
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
